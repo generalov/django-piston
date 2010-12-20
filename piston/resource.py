@@ -15,6 +15,7 @@ from doc import HandlerMethod
 from authentication import NoAuthentication
 from utils import coerce_put_post, FormValidationError, HttpStatusCode
 from utils import rc, format_error, translate_mime, MimerDataException
+from utils import parse_accept_header
 
 CHALLENGE = object()
 
@@ -58,12 +59,16 @@ class Resource(object):
         since that pretty much makes sense. Refer to `Mimer` for
         that as well.
         """
-        em = kwargs.pop('emitter_format', None)
+        if 'emitter_format' in kwargs:
+            return kwargs.pop('emitter_format')
+        if 'HTTP_ACCEPT' in request.META:
+            accepts = parse_accept_header(request.META['HTTP_ACCEPT'])
+            for content_type, priority in accepts:
+                if content_type in Emitter.CONTENT_TYPES:
+                    return Emitter.CONTENT_TYPES[content_type]
 
-        if not em:
-            em = request.GET.get('format', 'json')
 
-        return em
+        return request.GET.get('format', 'json')
 
     def form_validation_response(self, e):
         """
@@ -150,7 +155,7 @@ class Resource(object):
         if not meth:
             raise Http404
 
-        # Support emitter both through (?P<emitter_format>) and ?format=emitter.
+        # Support emitter both through (?P<emitter_format>) and ?format=emitter and Content-Accept.
         em_format = self.determine_emitter(request, *args, **kwargs)
 
         kwargs.pop('emitter_format', None)

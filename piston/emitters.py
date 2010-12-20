@@ -59,6 +59,7 @@ class Emitter(object):
     as the methods on the handler. Issue58 says that's no good.
     """
     EMITTERS = { }
+    CONTENT_TYPES = { }
     RESERVED_FIELDS = set([ 'read', 'update', 'create',
                             'delete', 'model', 'anonymous',
                             'allowed_methods', 'fields', 'exclude' ])
@@ -338,6 +339,9 @@ class Emitter(object):
          - `content_type`: The content type to serve response as.
         """
         cls.EMITTERS[name] = (klass, content_type)
+        if ';' in content_type:
+            content_type = content_type.split(';')[0]
+        cls.CONTENT_TYPES[content_type] = name
 
     @classmethod
     def unregister(cls, name):
@@ -345,6 +349,10 @@ class Emitter(object):
         Remove an emitter from the registry. Useful if you don't
         want to provide output in one of the built-in emitters.
         """
+        for content_type, ename in cls.CONTENT_TYPES.values():
+            if ename == name:
+                cls.CONTENT_TYPES.pop(content_type)
+                break
         return cls.EMITTERS.pop(name, None)
 
 class XMLEmitter(Emitter):

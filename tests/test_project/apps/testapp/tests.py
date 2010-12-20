@@ -266,6 +266,12 @@ class IncomingExpressiveTests(MainTests):
             HTTP_AUTHORIZATION=self.auth_string).content
             
         self.assertEquals(result, expected)
+        result = self.client.get('/api/expressive',
+            HTTP_AUTHORIZATION=self.auth_string,
+            HTTP_ACCEPT='application/json').content
+            
+        self.assertEquals(result, expected)
+        
 
     def test_incoming_invalid_json(self):
         resp = self.client.post('/api/expressive.json',
@@ -310,8 +316,13 @@ class IncomingExpressiveTests(MainTests):
   content: test
   title: test
 """
-        self.assertEquals(self.client.get('/api/expressive.yaml', 
+        self.assertEquals(self.client.get('/api/expressive.yaml',
             HTTP_AUTHORIZATION=self.auth_string).content, expected)
+        self.assertEquals(self.client.get('/api/expressive',
+            HTTP_AUTHORIZATION=self.auth_string,
+            HTTP_ACCEPT='application/x-yaml').content, expected)
+ 
+
 
     def test_incoming_invalid_yaml(self):
         resp = self.client.post('/api/expressive.yaml',
@@ -340,7 +351,7 @@ class Issue36RegressionTests(MainTests):
         super(self.__class__, self).tearDown()
         self.data.delete()
         signals.entry_request_started.disconnect(self.fetch_request)
-    
+
     def test_simple(self):
         # First try it with POST to see if it works there
         if True:

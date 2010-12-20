@@ -35,6 +35,7 @@ urlpatterns = patterns('',
 
     url(r'^issue58\.(?P<emitter_format>.+)$', issue58),
 
+    url(r'^expressive$', expressive),
     url(r'^expressive\.(?P<emitter_format>.+)$', expressive),
 
     url(r'^abstract\.(?P<emitter_format>.+)$', abstract),

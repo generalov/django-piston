@@ -1,3 +1,5 @@
+import re
+
 import time
 from django.http import HttpResponseNotAllowed, HttpResponseForbidden, HttpResponse, HttpResponseBadRequest
 from django.core.urlresolvers import reverse
@@ -340,3 +342,35 @@ def send_consumer_mail(consumer):
         print "Subject: %s" % _(subject)
         print body
 
+
+_accept_re = re.compile(r'([^\s;,]+)(?:[^,]*?;\s*q=(\d*(?:\.\d+)?))?')
+
+
+def parse_accept_header(value):
+    """Parses an HTTP Accept-* header.  This does not implement a complete
+    valid algorithm but one that supports at least value and quality
+    extraction.
+
+    Returns a new :class:`Accept` object (basically a list of ``(value, quality)``
+    tuples sorted by the quality with some additional accessor methods).
+
+    The second parameter can be a subclass of :class:`Accept` that is created
+    with the parsed values and returned.
+
+    :param value: the accept header string to be parsed.
+    :return: an list of ``(value, quality)`` tuples
+
+    This function is originally from `Werkzeug <http://werkzeug.pocoo.org/>`_.
+    """
+    if not value:
+        return []
+
+    result = []
+    for match in _accept_re.finditer(value):
+        quality = match.group(2)
+        if not quality:
+            quality = 1
+        else:
+            quality = max(min(float(quality), 1), 0)
+        result.append((match.group(1), quality))
+    return result
