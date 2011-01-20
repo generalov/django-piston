@@ -15,7 +15,7 @@ from doc import HandlerMethod
 from authentication import NoAuthentication
 from utils import coerce_put_post, FormValidationError, HttpStatusCode
 from utils import rc, format_error, translate_mime, MimerDataException
-from utils import parse_accept_header
+from piston.utils import parse_accept_header
 
 CHALLENGE = object()
 
