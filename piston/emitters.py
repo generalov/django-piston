@@ -46,6 +46,7 @@ except ImportError:
 # Allow people to change the reverser (default `permalink`).
 reverser = permalink
 
+
 class Emitter(object):
     """
     Super emitter. All other emitters should subclass
@@ -64,15 +65,25 @@ class Emitter(object):
                             'delete', 'model', 'anonymous',
                             'allowed_methods', 'fields', 'exclude' ])
 
-    def __init__(self, payload, typemapper, handler, fields=(), anonymous=True):
+    def __init__(self, payload, typemapper, handler, fields=None, anonymous=True):
         self.typemapper = typemapper
         self.data = payload
         self.handler = handler
-        self.fields = fields
+        self.fields = self.normalize_field(fields)
         self.anonymous = anonymous
 
         if isinstance(self.data, Exception):
             raise
+
+    def normalize_field(self, fields):
+        field_dict = {}
+
+        for field in fields:
+            if isinstance(field, (list, tuple,)):
+                field_dict[field[0]] = self.normalize_field(field[1])
+            else:
+                field_dict[field] = {}
+        return field_dict
 
     def method_fields(self, handler, fields):
         if not handler:
@@ -96,7 +107,7 @@ class Emitter(object):
 
         Returns `dict`.
         """
-        def _any(thing, fields=()):
+        def _any(thing, fields=None):
             """
             Dispatch, all types are routed through here.
             """
@@ -107,22 +118,22 @@ class Emitter(object):
             elif isinstance(thing, (tuple, list, set)):
                 ret = _list(thing, fields=fields)
             elif isinstance(thing, dict):
-                ret = _dict(thing, fields)
+                ret = _dict(thing, fields=fields)
             elif isinstance(thing, decimal.Decimal):
                 ret = str(thing)
             elif isinstance(thing, Model):
-                ret = _model(thing, fields)
+                ret = _model(thing, fields=fields)
             elif isinstance(thing, HttpResponse):
                 raise HttpStatusCode(thing)
             elif inspect.isfunction(thing):
                 if not inspect.getargspec(thing)[0]:
-                    ret = _any(thing())
+                    ret = _any(thing(), fields=fields)
             elif hasattr(thing, '__emittable__'):
                 f = thing.__emittable__
                 if inspect.ismethod(f) and len(inspect.getargspec(f)[0]) == 1:
-                    ret = _any(f())
+                    ret = _any(f(), fields=fields)
             elif repr(thing).startswith("<django.db.models.fields.related.RelatedManager"):
-                ret = _any(thing.all())
+                ret = _any(thing.all(), fields=fields)
             else:
                 ret = smart_unicode(thing, strings_only=True)
 
@@ -134,24 +145,27 @@ class Emitter(object):
             """
             return _any(getattr(data, field.name))
 
-        def _related(data, fields=()):
+        def _related(data, fields=None):
             """
             Foreign keys.
             """
             return [ _model(m, fields) for m in data.iterator() ]
 
-        def _m2m(data, field, fields=()):
+        def _m2m(data, field, fields=None):
             """
             Many to many (re-route to `_model`.)
             """
             return [ _model(m, fields) for m in getattr(data, field.name).iterator() ]
 
-        def _model(data, fields=()):
+        def _model(data, fields=None):
             """
             Models. Will respect the `fields` and/or
             `exclude` on the handler (see `typemapper`.)
             """
-            ret = { }
+            if fields is None:
+                fields = {}
+
+            ret = {}
             handler = self.in_typemapper(type(data), self.anonymous)
             get_absolute_uri = False
 
@@ -164,7 +178,8 @@ class Emitter(object):
                     version in the typemapper we were sent.
                     """
                     mapped = self.in_typemapper(type(data), self.anonymous)
-                    get_fields = set(mapped.fields)
+                    fields = self.normalize_field(mapped.fields)
+                    get_fields = set(fields)
                     exclude_fields = set(mapped.exclude).difference(get_fields)
 
                     if 'absolute_uri' in get_fields:
@@ -196,17 +211,17 @@ class Emitter(object):
                     if f.serialize and not any([ p in met_fields for p in [ f.attname, f.name ]]):
                         if not f.rel:
                             if f.attname in get_fields:
-                                ret[f.attname] = _any(v(f))
+                                ret[f.attname] = _any(v(f), fields=fields.get(f.attname, {}))
                                 get_fields.remove(f.attname)
                         else:
                             if f.attname[:-3] in get_fields:
-                                ret[f.name] = _fk(data, f)
+                                ret[f.name] = _fk(data, f, fields=fields.get(f.name, {}))
                                 get_fields.remove(f.name)
 
                 for mf in data._meta.many_to_many:
                     if mf.serialize and mf.attname not in met_fields:
                         if mf.attname in get_fields:
-                            ret[mf.name] = _m2m(data, mf)
+                            ret[mf.name] = _m2m(data, mf, fields=fields.get(mf.name, {}))
                             get_fields.remove(mf.name)
 
                 # try to get the remainder of fields
@@ -217,42 +232,42 @@ class Emitter(object):
 
                         if inst:
                             if hasattr(inst, 'all'):
-                                ret[model] = _related(inst, fields)
+                                ret[model] = _related(inst, fields=fields.get(model, {}))
                             elif callable(inst):
                                 if len(inspect.getargspec(inst)[0]) == 1:
-                                    ret[model] = _any(inst(), fields)
+                                    ret[model] = _any(inst(), fields=fields.get(model, {}))
                             else:
-                                ret[model] = _model(inst, fields)
+                                ret[model] = _any(inst, fields=fields.get(model, {}))
 
                     elif maybe_field in met_fields:
                         # Overriding normal field which has a "resource method"
                         # so you can alter the contents of certain fields without
                         # using different names.
-                        ret[maybe_field] = _any(met_fields[maybe_field](data))
+                        ret[maybe_field] = _any(met_fields[maybe_field](data), fields=fields.get(maybe_field, {}))
 
                     else:
                         maybe = getattr(data, maybe_field, None)
                         if maybe is not None:
                             if callable(maybe):
                                 if len(inspect.getargspec(maybe)[0]) <= 1:
-                                    ret[maybe_field] = _any(maybe())
+                                    ret[maybe_field] = _any(maybe(), fields=fields.get(maybe_field, {}))
                             else:
-                                ret[maybe_field] = _any(maybe)
+                                ret[maybe_field] = _any(maybe, fields=fields.get(maybe_field, {}))
                         else:
                             handler_f = getattr(handler or self.handler, maybe_field, None)
 
                             if handler_f:
-                                ret[maybe_field] = _any(handler_f(data))
+                                ret[maybe_field] = _any(handler_f(data), fields=fields.get(maybe_field, {}))
 
             else:
                 for f in data._meta.fields:
-                    ret[f.attname] = _any(getattr(data, f.attname))
+                    ret[f.attname] = _any(getattr(data, f.attname), fields=fields.get(f.attname, {}))
 
-                fields = dir(data.__class__) + ret.keys()
+                fields = dir(data.__class__) + ret.keys() + ['_state']
                 add_ons = [k for k in dir(data) if k not in fields]
 
                 for k in add_ons:
-                    ret[k] = _any(getattr(data, k))
+                    ret[k] = _any(getattr(data, k), fields=fields.get(k, {}))
 
             # resouce uri
             if self.in_typemapper(type(data), self.anonymous):
@@ -276,26 +291,26 @@ class Emitter(object):
 
             return ret
 
-        def _qs(data, fields=()):
+        def _qs(data, fields=None):
             """
             Querysets.
             """
-            return [ _any(v, fields) for v in data ]
+            return [ _any(v, fields=fields) for v in data ]
 
-        def _list(data, fields=()):
+        def _list(data, fields=None):
             """
             Lists.
             """
-            return [ _any(v, fields) for v in data ]
+            return [ _any(v, fields=fields) for v in data ]
 
-        def _dict(data, fields=()):
+        def _dict(data, fields=None):
             """
             Dictionaries.
             """
-            return dict([ (k, _any(v, fields)) for k, v in data.iteritems() ])
+            return dict([ (k, _any(v, fields=fields.get(k, {}))) for k, v in data.iteritems() if (not fields or k in fields)])
 
         # Kickstart the seralizin'.
-        return _any(self.data, self.fields)
+        return _any(self.data, fields=self.fields)
 
     def in_typemapper(self, model, anonymous):
         for klass, (km, is_anon) in self.typemapper.iteritems():
