@@ -112,7 +112,7 @@ def initialize_server_request(request):
     Shortcut for initialization.
     """
     # c.f. http://www.mail-archive.com/oauth@googlegroups.com/msg01556.html
-    if request.method == "POST" and request.META['CONTENT_TYPE'] == "application/x-www-form-urlencoded":
+    if request.method == "POST" and http_content_type(request) == "application/x-www-form-urlencoded":
         params = dict(request.REQUEST.items())
     else:
         params = {}
@@ -313,4 +313,21 @@ class OAuthAuthentication(object):
     def validate_token(request, check_timestamp=True, check_nonce=True):
         oauth_server, oauth_request = initialize_server_request(request)
         return oauth_server.verify_request(oauth_request)
+
+
+def http_parse_content_type(ctype):
+    """Return content type from a ``Content-Type`` like header.
+    
+    This strip any parameters.
+    """
+    if ';' in ctype:
+        ctype = ctype.split(';', 1)[0]
+    return ctype.strip()
+
+def http_content_type(request):
+    """Return content type of a ``request``.
+    
+    This strip any parameters.
+    """
+    return http_parse_content_type(request.META.get('CONTENT_TYPE', ''))
 

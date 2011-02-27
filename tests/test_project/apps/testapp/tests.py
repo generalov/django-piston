@@ -87,7 +87,8 @@ class OAuthTests(MainTests):
             'oauth_callback': 'http://printer.example.com/request_token_ready',
             'csrf_signature': OAuthAuthenticationForm.get_csrf_signature(settings.SECRET_KEY, oatoken.key),
             'authorize_access': 1,
-            }, doseq=True), content_type="application/x-www-form-urlencoded")
+            }, doseq=True),
+            content_type="application/x-www-form-urlencoded; charset=utf-8")
 
         # Response should be a redirect...
         self.assertEqual(302, response.status_code)
