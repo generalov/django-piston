@@ -2,3 +2,7 @@
 *.pyc
 build/
 dist/
+tests/.installed.cfg
+tests/bin/
+tests/develop-eggs/
+tests/parts/

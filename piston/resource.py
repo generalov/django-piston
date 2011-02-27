@@ -13,9 +13,9 @@ from emitters import Emitter
 from handler import typemapper
 from doc import HandlerMethod
 from authentication import NoAuthentication
-from utils import coerce_put_post, FormValidationError, HttpStatusCode
-from utils import rc, format_error, translate_mime, MimerDataException
-from piston.utils import parse_accept_header
+from utils import translate_request_data, FormValidationError, HttpStatusCode
+from utils import rc, format_error, MimerDataException
+from utils import parse_accept_header
 
 CHALLENGE = object()
 
@@ -124,10 +124,13 @@ class Resource(object):
         """
         rm = request.method.upper()
 
-        # Django's internal mechanism doesn't pick up
-        # PUT request, so we trick it a little here.
-        if rm == "PUT":
-            coerce_put_post(request)
+        # Django's internal mechanism pick up just a form data in a POST
+        # request, so we trick it a little here to translate nested
+        # datastructs into `request.data` here.
+        try:
+            translate_request_data(request)
+        except MimerDataException:
+            return rc.BAD_REQUEST
 
         actor, anonymous = self.authenticate(request, rm)
 
@@ -135,18 +138,10 @@ class Resource(object):
             return actor(request)
         else:
             handler = actor
-
-        # Translate nested datastructs into `request.data` here.
-        if rm in ('POST', 'PUT'):
-            try:
-                translate_mime(request)
-            except MimerDataException:
-                return rc.BAD_REQUEST
-            if not hasattr(request, 'data'):
-                if rm == 'POST':
-                    request.data = request.POST
-                else:
-                    request.data = request.PUT
+            # Clean up the request object a bit, since we might
+            # very well have `oauth_`-headers in there, and we
+            # don't want to pass these along to the handler.
+            request = self.cleanup_request(request)
 
         if not rm in handler.allowed_methods:
             return HttpResponseNotAllowed(handler.allowed_methods)
@@ -159,11 +154,6 @@ class Resource(object):
         em_format = self.determine_emitter(request, *args, **kwargs)
 
         kwargs.pop('emitter_format', None)
-
-        # Clean up the request object a bit, since we might
-        # very well have `oauth_`-headers in there, and we
-        # don't want to pass these along to the handler.
-        request = self.cleanup_request(request)
 
         try:
             result = meth(request, *args, **kwargs)
@@ -222,10 +212,10 @@ class Resource(object):
         Removes `oauth_` keys from various dicts on the
         request object, and returns the sanitized version.
         """
-        for method_type in ('GET', 'PUT', 'POST', 'DELETE'):
-            block = getattr(request, method_type, { })
+        for method_type in ('GET', 'data'):
+            block = getattr(request, method_type, None)
 
-            if True in [ k.startswith("oauth_") for k in block.keys() ]:
+            if block and isinstance(block, dict) and True in [ k.startswith("oauth_") for k in block.keys() ]:
                 sanitized = block.copy()
 
                 for k in sanitized.keys():

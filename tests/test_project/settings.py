@@ -9,6 +9,7 @@ INSTALLED_APPS = (
     'django.contrib.sites',
     'piston',
     'test_project.apps.testapp',
+    'test_project.apps.testanon',
 )
 TEMPLATE_DIRS = (
     os.path.join(os.path.dirname(__file__), 'templates'),

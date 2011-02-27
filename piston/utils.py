@@ -9,7 +9,9 @@ from django.core.mail import send_mail, mail_admins
 from django.conf import settings
 from django.utils.translation import ugettext as _
 from django.template import loader, TemplateDoesNotExist
+
 from decorator import decorator
+from mimer import Mimer, MimerDataException, translate_request_data
 
 from datetime import datetime, timedelta
 
@@ -152,132 +154,6 @@ def throttle(max_requests, timeout=60*60, extra=''):
         return f(self, request, *args, **kwargs)
     return wrap
 
-def coerce_put_post(request):
-    """
-    Django doesn't particularly understand REST.
-    In case we send data over PUT, Django won't
-    actually look at the data and load it. We need
-    to twist its arm here.
-
-    The try/except abominiation here is due to a bug
-    in mod_python. This should fix it.
-    """
-    if request.method == "PUT":
-        # Bug fix: if _load_post_and_files has already been called, for
-        # example by middleware accessing request.POST, the below code to
-        # pretend the request is a POST instead of a PUT will be too late
-        # to make a difference. Also calling _load_post_and_files will result
-        # in the following exception:
-        #   AttributeError: You cannot set the upload handlers after the upload has been processed.
-        # The fix is to check for the presence of the _post field which is set
-        # the first time _load_post_and_files is called (both by wsgi.py and
-        # modpython.py). If it's set, the request has to be 'reset' to redo
-        # the query value parsing in POST mode.
-        if hasattr(request, '_post'):
-            del request._post
-            del request._files
-
-        try:
-            request.method = "POST"
-            request._load_post_and_files()
-            request.method = "PUT"
-        except AttributeError:
-            request.META['REQUEST_METHOD'] = 'POST'
-            request._load_post_and_files()
-            request.META['REQUEST_METHOD'] = 'PUT'
-
-        request.PUT = request.POST
-
-
-class MimerDataException(Exception):
-    """
-    Raised if the content_type and data don't match
-    """
-    pass
-
-class Mimer(object):
-    TYPES = dict()
-
-    def __init__(self, request):
-        self.request = request
-
-    def is_multipart(self):
-        content_type = self.content_type()
-
-        if content_type is not None:
-            return content_type.lstrip().startswith('multipart')
-
-        return False
-
-    def loader_for_type(self, ctype):
-        """
-        Gets a function ref to deserialize content
-        for a certain mimetype.
-        """
-        for loadee, mimes in Mimer.TYPES.iteritems():
-            for mime in mimes:
-                if ctype.startswith(mime):
-                    return loadee
-
-    def content_type(self):
-        """
-        Returns the content type of the request in all cases where it is
-        different than a submitted form - application/x-www-form-urlencoded
-        """
-        type_formencoded = "application/x-www-form-urlencoded"
-
-        ctype = self.request.META.get('CONTENT_TYPE', type_formencoded)
-
-        if type_formencoded in ctype:
-            return None
-
-        return ctype
-
-    def translate(self):
-        """
-        Will look at the `Content-type` sent by the client, and maybe
-        deserialize the contents into the format they sent. This will
-        work for JSON, YAML, XML and Pickle. Since the data is not just
-        key-value (and maybe just a list), the data will be placed on
-        `request.data` instead, and the handler will have to read from
-        there.
-
-        It will also set `request.content_type` so the handler has an easy
-        way to tell what's going on. `request.content_type` will always be
-        None for form-encoded and/or multipart form data (what your browser sends.)
-        """
-        ctype = self.content_type()
-        self.request.content_type = ctype
-
-        if not self.is_multipart() and ctype:
-            loadee = self.loader_for_type(ctype)
-
-            if loadee:
-                try:
-                    self.request.data = loadee(self.request.raw_post_data)
-
-                    # Reset both POST and PUT from request, as its
-                    # misleading having their presence around.
-                    self.request.POST = self.request.PUT = dict()
-                except (TypeError, ValueError):
-                    # This also catches if loadee is None.
-                    raise MimerDataException
-            else:
-                self.request.data = None
-
-        return self.request
-
-    @classmethod
-    def register(cls, loadee, types):
-        cls.TYPES[loadee] = types
-
-    @classmethod
-    def unregister(cls, loadee):
-        return cls.TYPES.pop(loadee)
-
-def translate_mime(request):
-    request = Mimer(request).translate()
-
 def require_mime(*mimes):
     """
     Decorator requiring a certain mimetype. There's a nifty
@@ -286,7 +162,7 @@ def require_mime(*mimes):
     """
     @decorator
     def wrap(f, self, request, *args, **kwargs):
-        m = Mimer(request)
+        m = Mimer.from_request(request)
         realmimes = set()
 
         rewrite = { 'json':   'application/json',
@@ -297,7 +173,7 @@ def require_mime(*mimes):
         for idx, mime in enumerate(mimes):
             realmimes.add(rewrite.get(mime, mime))
 
-        if not m.content_type() in realmimes:
+        if not m.content_type in realmimes:
             return rc.BAD_REQUEST
 
         return f(self, request, *args, **kwargs)
