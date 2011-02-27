@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from django.utils import simplejson
+from django.utils.http import urlencode
 from django.conf import settings
 
 from piston import oauth
@@ -79,12 +80,14 @@ class OAuthTests(MainTests):
 #            'oauth_callback': 'http://printer.example.com/request_token_ready',
 #            })
 
-        response = self.client.post('/api/oauth/authorize', {
+        # Send request with "Content-type: application/x-www-form-urlencoded"
+        # c.f. http://www.mail-archive.com/oauth@googlegroups.com/msg01556.html
+        response = self.client.post('/api/oauth/authorize', urlencode({
             'oauth_token': oatoken.key,
             'oauth_callback': 'http://printer.example.com/request_token_ready',
             'csrf_signature': OAuthAuthenticationForm.get_csrf_signature(settings.SECRET_KEY, oatoken.key),
             'authorize_access': 1,
-            })
+            }, doseq=True), content_type="application/x-www-form-urlencoded")
 
         # Response should be a redirect...
         self.assertEqual(302, response.status_code)
