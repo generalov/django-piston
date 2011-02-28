@@ -20,11 +20,48 @@ class MimerDataException(Exception):
     pass
 
 
-class Mimer(object):
-    TYPES = dict()
+class MimerLoaderRegistry(object):
+    """This is the registry of deserializers."""
+    
+    def __init__(self):
+        self._types = dict()
 
-    def __init__(self, media_type):
+    def get_loader_for_type(self, media_type):
+        """
+        Gets a function ref to deserialize content
+        for a certain mimetype.
+        """
+        loader = None
+        content_type, params = parse_content_type_header(media_type)
+        for loadee, mimes in self._types.iteritems():
+            if content_type in mimes:
+                if getattr(loadee, 'accepts_content_type_params', False):
+                    loader = lambda data: loadee(data, **params)
+                else:
+                    loader = loadee
+                break
+        return loader
+
+    def register(self, loadee, media_types):
+        """Register this deserializer for given list of media types."""
+        content_types = [parse_content_type_header(media_type)[0]
+                for media_type in media_types]
+        self._types[loadee] = content_types
+
+    def unregister(self, loadee):
+        """Remove this deserializer."""
+        self._types.pop(loadee)
+
+
+# This is global registry of mimer loaders
+DEFAULT_REGISTRY = MimerLoaderRegistry()
+
+
+class Mimer(object):
+
+    def __init__(self, media_type, registry=None):
         self._media_type = media_type.strip()
+        self._registry = registry or DEFAULT_REGISTRY
 
     @classmethod
     def from_request(cls, request):
@@ -61,12 +98,18 @@ class Mimer(object):
     @property
     def loadee(self):
         """Return a loader for our media type or None."""
-        return Mimer.loader_for_type(self.media_type)
+        return self.registry.get_loader_for_type(self.media_type)
+
+    @property
+    def registry(self):
+        """Return a registry of deserializers."""
+        return self._registry
 
     def translate(self, raw_data):
-        """
-        Will try to deserialize the ``raw_data`` according to an our
-        media_type. This will work for JSON, YAML, XML and Pickle.
+        """Will try to deserialize the ``raw_data`` according to an our
+        media_type.
+        
+        This will work for JSON, YAML, XML and Pickle.
         """
         try:
             return self.loadee(raw_data)
@@ -74,32 +117,15 @@ class Mimer(object):
             # This also catches if loadee is None.
             raise MimerDataException
 
-    # TODO: extract these classmethods to a MimerRegistry.
-
-    @classmethod
-    def loader_for_type(cls, media_type):
-        """
-        Gets a function ref to deserialize content
-        for a certain mimetype.
-        """
-        loader = None
-        content_type, params = parse_content_type_header(media_type)
-        for loadee, mimes in Mimer.TYPES.iteritems():
-            if content_type in mimes:
-                if getattr(loadee, 'accepts_content_type_params', False):
-                    loader = lambda data: loadee(data, **params)
-                else:
-                    loader = loadee
-                break
-        return loader
-
     @classmethod
     def register(cls, loadee, types):
-        cls.TYPES[loadee] = types
+        """Register loadee in default global registry."""
+        DEFAULT_REGISTRY.register(loadee, types)
 
     @classmethod
     def unregister(cls, loadee):
-        return cls.TYPES.pop(loadee)
+        """Remove loadee from default global registry."""
+        return DEFAULT_REGISTRY.unregister(loadee)
 
 
 def translate_request_data(request):
