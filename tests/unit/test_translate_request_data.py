@@ -2,11 +2,8 @@
 import unittest
 
 
-if __name__ == '__main__':
-    import os, sys
-    sys.path.insert(1, os.path.join(os.path.dirname(__file__), '..', '..'))
-    from django.conf import settings
-    settings.configure(DEBUG=True)
+from django.conf import settings
+settings.configured or settings.configure(DEBUG=True)
 
 
 from requestfactory import RequestFactory

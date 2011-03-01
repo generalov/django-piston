@@ -1,10 +1,6 @@
 #!/usr/bin/env python
 import unittest
 
-if __name__ == "__main__":
-    import os, sys
-    sys.path.insert(1, os.path.join(os.path.dirname(__file__), "..", ".."))
-
 from piston.mimer import Mimer, MimerLoaderRegistry
 
 
