@@ -26,6 +26,15 @@ class ApplicationXWwwFormUrlencodedTestCase(unittest.TestCase):
         translate_request_data(request)
         self.assertEquals({}, request.data)
 
+    def test_should_be_patient_then_content_type_header_has_empty_value(self):
+        """Should be patient then Content-type header has empty value."""
+        from django.http import QueryDict
+        request = self.requestfactory.get('/?Hello=Piston',
+                headers={'Content-type': ''})
+        translate_request_data(request)
+        self.assertEquals({}, request.data)
+        self.assertFalse(hasattr(request, 'content_type'))
+
     def test_should_convert_form_POST_to_data(self):
         """Should translate form POST message body."""
         from django.http import QueryDict

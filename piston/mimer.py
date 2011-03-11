@@ -135,9 +135,9 @@ def translate_request_data(request):
     (excluding a ``Content-type`` parameters).
     """
     mimer = Mimer.from_request(request)
-    request.content_type = mimer.content_type
     request.data = dict()
     if has_body(request):
+        request.content_type = mimer.content_type
         if not request.content_type:
             pass
         elif mimer.is_form_data:
@@ -161,8 +161,8 @@ def has_body(request):
     # inclusion of a Content-Length or Transfer-Encoding header field in
     # the request's message-headers."
     # See http://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.3
-    return 'CONTENT_LENGTH' in request.META or \
-           'HTTP_TRANSFER_ENCODING' in request.META
+    return request.META.get('CONTENT_LENGTH', None) or \
+           request.META.get('HTTP_TRANSFER_ENCODING', None)
 
 def parse_content_type_header(header):
     """Parse a ``Content-Type`` like header into a tuple with the content type
